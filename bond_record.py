@@ -9,7 +9,7 @@ eligible_bonds = {0: {'eligible_date': '1 December 2024',
                   2: {'eligible_date': '1 March 2025',
                       'deposit_date': '3 January 2025',
                       'bond_id_start': '608ZF437404',
-                      'bond_id_end': '608ZF966879'},  # 608ZF443403
+                      'bond_id_end': '608ZF443403'},  #
 
                   3: {'eligible_date': '1 April 2025',
                       'deposit_date': '19 February 2025',

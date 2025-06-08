@@ -1,12 +1,22 @@
 import re
-
 import pandas as pd
 import requests
 import os
 import datetime
+import logging
 from bs4 import BeautifulSoup
 
 from helpers.dataframe import pandas_show_all
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("data_processing.log"),
+        logging.StreamHandler()  # also prints to console
+    ]
+)
 
 # NOTE: essential files
 base_url = 'https://www.nsandi.com/prize-checker/winners'
@@ -29,7 +39,7 @@ class PremiumBonds(object):
         self.target_file_path = os.path.join(target_directory, target_file)
 
         if os.path.isfile(self.target_file_path):
-            print(f'Latest winner file is available: {target_file}')
+            logging.info(f"Latest winner file is already downloaded {target_file}")
         else:
             for link in soup.find_all("a", href=True):
                 href = link["href"]
@@ -38,6 +48,7 @@ class PremiumBonds(object):
                         href_downloaded = href
                         full_url = f"https://www.nsandi.com{href}" if href.startswith("/") else href
                         print("Found file:", full_url)
+                        logging.info(f"Identified winner excel file from NS&I: {full_url}")
 
                         # Download the file
                         file_name = full_url.split("/")[-1]
@@ -45,7 +56,7 @@ class PremiumBonds(object):
                         with open(fr'./bond_files/{file_name}', "wb") as f:
                             file_data = requests.get(full_url).content
                             f.write(file_data)
-                        print(f"Downloaded {file_name}")
+                        logging.info(f"Winner excel file downloaded: {file_name}")
 
     def check_prize(self):
         pandas_show_all()
@@ -68,7 +79,7 @@ class PremiumBonds(object):
 
             if start_match and end_match:
                 if bond_start_str != bond_end_str:
-                    print('Inconsistent bond purchase ids format')
+                    logging.warning('Inconsistent bond purchase ids format')
                     break
 
                 else:
