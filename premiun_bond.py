@@ -123,25 +123,29 @@ class PremiumBonds(object):
         df_bond = df_bond.drop(columns=['start_num', 'end_num'])
         df_win = df_win.drop(columns=['id_num'])
 
-        def annualised_bond_yield(df_bond, start_col):
+        def annualised_bond_yield(df_bond, start_cols):
             as_of = datetime.date.today()
             df = df_bond.copy()
 
-            start = pd.to_datetime(df_bond[start_col]).dt.date
-            days = pd.Series((as_of - start).map(lambda d: d.days), index=df.index).clip(lower=1)
-            principal = df['number_of_bonds'].astype(float)
-            df['annualised_rate'] = (df['winnings'].astype(float) / principal) * (365 / days)
-            df['days_held'] = days
-            df['principal'] = principal
+            for start_col in start_cols:
+                start = pd.to_datetime(df_bond[f'{start_col}_date']).dt.date
+                days = pd.Series((as_of - start).map(lambda d: d.days), index=df.index).clip(lower=1)
+                principal = df['number_of_bonds'].astype(float)
+                # NOTE: Compound Interest
+                # df[f'{start_col}_annualised_rate'] = (1+ df['winnings'].astype(float) / principal)**(365 / days) - 1
+                # NOTE: Simple Interest
+                df[f'{start_col}_annualised_rate'] = (df['winnings'].astype(float) / principal)*(365 / days)
+                df[f'{start_col}_days_held'] = days
+                df['principal'] = principal
             return df
 
+        print(df_win)
         print(df_bond)
-        df_out = annualised_bond_yield(df_bond, start_col='eligible_date')
+        df_out = annualised_bond_yield(df_bond, start_cols=['eligible', 'deposit'])
         print(df_out)
+        total_bonds = df_out['number_of_bonds'].sum()
 
-
-
-
-
-
-
+        weighted_rate = (df_out['eligible_annualised_rate'] * df_out['number_of_bonds']).sum() / total_bonds * 100
+        print(f'Annualised Interest Rate for the entire portfolio based on eligible_date: {weighted_rate:.2f} ')
+        weighted_rate = (df_out['deposit_annualised_rate'] * df_out['number_of_bonds']).sum() / total_bonds * 100
+        print(f'Annualised Interest Rate for the entire portfolio based on deposit date: {weighted_rate:.2f} ')
