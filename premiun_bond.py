@@ -6,6 +6,8 @@ import datetime
 import logging
 from bs4 import BeautifulSoup
 
+from bond_record import win_record
+from helper import extract_number
 from helpers.dataframe import pandas_show_all
 
 
@@ -20,7 +22,7 @@ logging.basicConfig(
 
 # NOTE: essential files
 base_url = 'https://www.nsandi.com/prize-checker/winners'
-
+pandas_show_all()
 
 class PremiumBonds(object):
     def __init__(self, bond_record):
@@ -60,14 +62,16 @@ class PremiumBonds(object):
 
     def check_prize(self):
         pandas_show_all()
-        winner_df = pd.read_excel(self.target_file_path, sheet_name=0, engine='openpyxl', skiprows=2,
-                                  index_col='Winning Bond NO.')
+        try:
+            winner_df = pd.read_excel(self.target_file_path, sheet_name=0, engine='openpyxl', skiprows=2,
+                                      index_col='Winning Bond NO.')
+        except FileNotFoundError:
+            logging.warning(f"Winner excel file not found. Double check url.")
+            return None
         winner_df = winner_df.loc[:, ~winner_df.columns.str.contains('^Unnamed')]
         for bond_bundle, bond_details in self.bond_record.items():
-            # print(bond_bundle)
-            # print(bond_details)
-            start_id = bond_details['bond_id_start']
-            end_id = bond_details['bond_id_end']
+            start_id = bond_details['start_id']
+            end_id = bond_details['end_id']
             start_match = re.match(r'(\d*[A-Z]+)(\d+)', start_id, re.IGNORECASE)
             end_match = re.match(r'(\d*[A-Z]+)(\d+)', end_id, re.IGNORECASE)
 
@@ -96,6 +100,48 @@ class PremiumBonds(object):
                                 print(f'Are you from {row["Area"]} with a total holding of £{row["Total V of Holding"]}?')
                                 # print(prize_df)
                         else:
-                            print('Better luck next time!')
+                            print(f'{bond_bundle}: You have the same winning prefix {bond_start_str}. '
+                                  f'Better luck next time!')
+                    else:
+                        print(f'{bond_bundle}: Not even close this time :(')
+
+
+    def bond_analysis(self):
+        df_bond = pd.DataFrame.from_dict(self.bond_record, 'index')
+        df_bond['number_of_bonds'] = df_bond.apply(lambda row: extract_number(row["end_id"]) -
+                                                               extract_number(row["start_id"]) + 1, axis=1)
+
+        df_win = pd.DataFrame.from_dict(win_record, orient='index')
+        df_bond['start_num'] = df_bond['start_id'].apply(extract_number)
+        df_bond['end_num'] = df_bond['end_id'].apply(extract_number)
+        df_win['id_num'] = df_win['id'].apply(extract_number)
+
+        df_bond['winnings'] = 0
+        for _, win_row in df_win.iterrows():
+            mask = (df_bond['start_num'] <= win_row['id_num']) & (df_bond['end_num'] >= win_row['id_num'])
+            df_bond.loc[mask, 'winnings'] += win_row['amount']
+        df_bond = df_bond.drop(columns=['start_num', 'end_num'])
+        df_win = df_win.drop(columns=['id_num'])
+
+        def annualised_bond_yield(df_bond, start_col):
+            as_of = datetime.date.today()
+            df = df_bond.copy()
+
+            start = pd.to_datetime(df_bond[start_col]).dt.date
+            days = pd.Series((as_of - start).map(lambda d: d.days), index=df.index).clip(lower=1)
+            principal = df['number_of_bonds'].astype(float)
+            df['annualised_rate'] = (df['winnings'].astype(float) / principal) * (365 / days)
+            df['days_held'] = days
+            df['principal'] = principal
+            return df
+
+        print(df_bond)
+        df_out = annualised_bond_yield(df_bond, start_col='eligible_date')
+        print(df_out)
+
+
+
+
+
 
 

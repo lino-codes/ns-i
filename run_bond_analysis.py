@@ -2,11 +2,10 @@ from bond_record import bonds_history
 from premiun_bond import PremiumBonds
 
 
-def check_prize():
+def run_analysis():
     bond_obj = PremiumBonds(bonds_history)
-    bond_obj.download_prize_winner()
-    bond_obj.check_prize()
+    bond_obj.bond_analysis()
 
 
 if __name__ == '__main__':
-    check_prize()
+    run_analysis()
