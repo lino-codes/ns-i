@@ -74,5 +74,11 @@ win_record = {0: {'id': '598DB548967',
                   'amount': 100},
               8: {'id': '615AF259461',
                   'date': datetime.date(2025, 9, 1),
-                  'amount': 50}
+                  'amount': 50},
+              9: {'id': '598DB548846',
+                  'date': datetime.date(2025, 11, 1),
+                  'amount': 50},
+              10: {'id': '598DB548918',
+                  'date': datetime.date(2025, 11, 1),
+                  'amount': 50},
               }
