@@ -139,10 +139,7 @@ class PremiumBonds(object):
                 df['principal'] = principal
             return df
 
-        print(df_win)
-        print(df_bond)
         df_out = annualised_bond_yield(df_bond, start_cols=['eligible', 'deposit'])
-        print(df_out)
         total_bonds = df_out['number_of_bonds'].sum()
 
         weighted_rate = (df_out['eligible_annualised_rate'] * df_out['number_of_bonds']).sum() / total_bonds * 100
