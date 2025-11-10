@@ -69,7 +69,7 @@ print(f'Your Odds of winning a price: {winning_odds:.2F}')
 print(f'Your expected winning every month: {(winning_odds*winning_per_prize):.2F}')
 print("Standard deviation:", std_dev)
 
-actual_win = 83
+actual_win = 1000
 
 # 2. Calculate the percentile for £200
 z_score = (actual_win - winning_odds) / std_dev
