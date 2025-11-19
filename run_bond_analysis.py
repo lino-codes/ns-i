@@ -4,7 +4,8 @@ from premiun_bond import PremiumBonds
 
 def run_analysis():
     bond_obj = PremiumBonds(bonds_history)
-    bond_obj.bond_analysis()
+    # bond_obj.bond_analysis()
+    bond_obj.read_historical_winners()
 
 
 if __name__ == '__main__':

@@ -6,6 +6,8 @@ import datetime
 import logging
 from bs4 import BeautifulSoup
 
+import zipfile
+from io import BytesIO
 from bond_record import win_record
 from helper import extract_number
 from helpers.dataframe import pandas_show_all
@@ -19,6 +21,7 @@ logging.basicConfig(
         logging.StreamHandler()  # also prints to console
     ]
 )
+logger = logging.getLogger(__name__)
 
 # NOTE: essential files
 base_url = 'https://www.nsandi.com/prize-checker/winners'
@@ -146,3 +149,98 @@ class PremiumBonds(object):
         print(f'Annualised Interest Rate for the entire portfolio based on eligible_date: {weighted_rate:.2f} ')
         weighted_rate = (df_out['deposit_annualised_rate'] * df_out['number_of_bonds']).sum() / total_bonds * 100
         print(f'Annualised Interest Rate for the entire portfolio based on deposit date: {weighted_rate:.2f} ')
+
+    def historical_prize_winner(self):
+        url = "https://www.nsandi.com/get-to-know-us/winning-bonds-downloads"
+
+        response = requests.get(url)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        extract_dir = "./bond"
+        download_exts = ['.zip', '.pdf', '.xls', '.xlsx', '.csv', '.doc', '.docx', '.ppt', '.pptx']
+        download_links = []
+
+        files = [f for f in os.listdir(extract_dir) if os.path.isfile(os.path.join(extract_dir, f))]
+        month_years = set()
+        for file_name in files:
+            # Match patterns like PWREP_DDMMYYYY.txt
+            match = re.search(r'_(\d{2})(\d{2})(\d{4})\.txt', file_name)
+            if match:
+                month = match.group(2)
+                year = match.group(3)
+                month_years.add(f"{month}-{year}")
+
+        files_mm_yy = sorted(month_years)
+
+        pattern = re.compile(r'({})$'.format('|'.join([re.escape(ext) for ext in download_exts])))
+        # Find all anchor tags
+        for a in soup.find_all('a', href=True):
+            href = a['href']
+            # Check if link ends with one of the downloadable extensions
+            if pattern.search(href.lower()):
+                download_links.append(href)
+            # Check if anchor has a 'download' attribute
+            elif a.get('download') is not None:
+                download_links.append(href)
+
+        bond_links = [link for link in download_links if 'unclaimed' not in link]
+        month_years = set()
+
+        for file in bond_links:
+            match = re.search(r'-(\d{2})-(\d{4})\.zip$', file)
+            if match:
+                month = match.group(1)
+                year = match.group(2)
+                month_years.add(f"{month}-{year}")
+
+        bond_mm_yy = sorted(month_years)
+        target_mm_yy = [item for item in bond_mm_yy if item not in files_mm_yy]
+
+        if target_mm_yy:
+            for link in bond_links:
+                print(f"Processing {link} ...")
+                resp = requests.get(f"https://www.nsandi.com/{link}")
+                with zipfile.ZipFile(BytesIO(resp.content)) as zf:
+                    for member in zf.namelist():
+                        out_path = os.path.join(extract_dir, member)
+                        if os.path.exists(out_path):
+                            print(f"Extracted file already exists: {out_path} -- Skipping extraction for this file.")
+                            continue
+                        # Ensure subdirectories exist
+                        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+                        with zf.open(member) as source, open(out_path, "wb") as target:
+                            target.write(source.read())
+                        print(f"Extracted: {out_path}")
+        else:
+            print('All Files have already been extracted.')
+
+    def read_historical_winners(self):
+        files = os.listdir(f'./bond')
+        matched_files = [f for f in files if f.startswith('PWREP') and f.endswith('.txt')]
+        all_df = pd.DataFrame()
+        for matched_file in matched_files:
+            with open(f'./bond/{matched_file}', 'r', encoding='cp1252') as f:
+                text = f.read()
+            pattern = r'([A-Z]+\.)\s+([\d,]+) prize.*?£([\d,]+)'
+
+            matches = re.findall(pattern, text)
+
+            # Build the records for DataFrame
+            rows = []
+            for part, count, prize in matches:
+                rows.append({
+                    'part': part.replace('.', ''),
+                    'number_of_prizes': int(count.replace(',', '')),
+                    'prize_amount': int(prize.replace(',', ''))
+                })
+
+            df = pd.DataFrame(rows)
+            df['total_prize_amount'] = df['number_of_prizes'] * df['prize_amount']
+            file_date = matched_file.replace('PWREP_', '')
+            file_date = file_date.replace('.txt', '')
+            df['file_date'] = file_date
+
+            all_df = pd.concat([all_df, df])
+
+        all_df.to_csv(f"./bond/prize_distribution_{}.csv")
+
+
