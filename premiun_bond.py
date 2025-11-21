@@ -238,9 +238,11 @@ class PremiumBonds(object):
             file_date = matched_file.replace('PWREP_', '')
             file_date = file_date.replace('.txt', '')
             df['file_date'] = file_date
+            
+
 
             all_df = pd.concat([all_df, df])
 
-        all_df.to_csv(f"./bond/prize_distribution_{}.csv")
+        all_df.to_csv(f"./bond/prize_distribution.csv")
 
 
