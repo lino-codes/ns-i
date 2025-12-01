@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 import zipfile
 from io import BytesIO
 from bond_record import win_record
-from helper import extract_number
+from helper import extract_number, parse_prize_ids
 from helpers.dataframe import pandas_show_all
 
 
@@ -150,9 +150,9 @@ class PremiumBonds(object):
         weighted_rate = (df_out['deposit_annualised_rate'] * df_out['number_of_bonds']).sum() / total_bonds * 100
         print(f'Annualised Interest Rate for the entire portfolio based on deposit date: {weighted_rate:.2f} ')
 
-    def historical_prize_winner(self):
+    def get_historical_prize_winner(self):
+        logger.info('Getting complete prize winners from NS&I.')
         url = "https://www.nsandi.com/get-to-know-us/winning-bonds-downloads"
-
         response = requests.get(url)
         soup = BeautifulSoup(response.content, 'html.parser')
         extract_dir = "./bond"
@@ -211,7 +211,7 @@ class PremiumBonds(object):
                             target.write(source.read())
                         print(f"Extracted: {out_path}")
         else:
-            print('All Files have already been extracted.')
+            logger.info(f'All Files have already been extracted, latest being {bond_links[-1]}')
 
     def read_historical_winners(self):
         files = os.listdir(f'./bond')
@@ -235,14 +235,51 @@ class PremiumBonds(object):
 
             df = pd.DataFrame(rows)
             df['total_prize_amount'] = df['number_of_prizes'] * df['prize_amount']
+            print('MATCHED FILE')
+            print(matched_file)
             file_date = matched_file.replace('PWREP_', '')
             file_date = file_date.replace('.txt', '')
-            df['file_date'] = file_date
-            
+            print(file_date)
 
+            df['file_date'] = str(file_date)
+            print(df)
 
             all_df = pd.concat([all_df, df])
 
         all_df.to_csv(f"./bond/prize_distribution.csv")
+        all_df.to_parquet(f"./bond/prize_distribution.parquet")
+
+
+    def odds_analysis(self):
+        # prize_df = pd.read_csv(f"./bond/prize_distribution.csv")
+        # print(prize_df)
+        prize_df = pd.read_parquet(f"./bond/prize_distribution.parquet")
+        print(prize_df)
+        files = os.listdir(f'./bond')
+        matched_files = [f for f in files if f.startswith('PWREP') and f.endswith('.txt')]
+        all_df = pd.DataFrame()
+
+
+        for matched_file in matched_files:
+            with open(f'./bond/{matched_file}', 'r', encoding='cp1252') as f:
+                text = f.read()
+            prize_dict = parse_prize_ids(text, matched_file)
+
+
+    def get_complete_historical_prize_winners(self):
+        self.get_historical_prize_winner()
+        files = os.listdir(f'./bond')
+        matched_txts = [f for f in files if f.startswith('PWREP') and f.endswith('.txt')]
+        print('MATCHED FILES for TEXT')
+        print(matched_txts)
+        print('MATCHED FILES for TEXT')
+        matched_pars = [f for f in files if f.startswith('PWREP') and f.endswith('.parquet')]
+        print(matched_pars)
+
+
+
+
+
+
 
 
