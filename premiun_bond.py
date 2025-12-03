@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 
 import zipfile
 from io import BytesIO
-from bond_record import win_record
+from bond_record import win_record, bonds_history
 from helper import extract_number, parse_prize_ids
 from helpers.dataframe import pandas_show_all
 
@@ -32,6 +32,8 @@ class PremiumBonds(object):
         self.base_url = base_url
         self.bond_record = bond_record
         self.target_file_path = ''
+        self.text_files = [f for f in os.listdir(f'./bond') if f.startswith('PWREP') and f.endswith('.txt')]
+        self.parquet_files = [f for f in os.listdir(f'./bond') if f.startswith('PWREP') and f.endswith('.parquet')]
 
     def download_prize_winner(self):
         response = requests.get(self.base_url)
@@ -211,7 +213,7 @@ class PremiumBonds(object):
                             target.write(source.read())
                         print(f"Extracted: {out_path}")
         else:
-            logger.info(f'All Files have already been extracted, latest being {bond_links[-1]}')
+            logger.info(f'All Files have already been extracted, latest being {bond_links[0]}')
 
     def read_historical_winners(self):
         files = os.listdir(f'./bond')
@@ -251,8 +253,6 @@ class PremiumBonds(object):
 
 
     def odds_analysis(self):
-        # prize_df = pd.read_csv(f"./bond/prize_distribution.csv")
-        # print(prize_df)
         prize_df = pd.read_parquet(f"./bond/prize_distribution.parquet")
         print(prize_df)
         files = os.listdir(f'./bond')
@@ -268,13 +268,49 @@ class PremiumBonds(object):
 
     def get_complete_historical_prize_winners(self):
         self.get_historical_prize_winner()
-        files = os.listdir(f'./bond')
-        matched_txts = [f for f in files if f.startswith('PWREP') and f.endswith('.txt')]
-        print('MATCHED FILES for TEXT')
-        print(matched_txts)
-        print('MATCHED FILES for TEXT')
-        matched_pars = [f for f in files if f.startswith('PWREP') and f.endswith('.parquet')]
-        print(matched_pars)
+        for matched_file in self.text_files:
+            if not matched_file.replace('.txt', '.parquet') in self.parquet_files:
+                logger.info(f'Creating parquet file from {matched_file}')
+                with open(f'./bond/{matched_file}', 'r', encoding='cp1252') as f:
+                    text = f.read()
+                    # print(text)
+                    parse_prize_ids(text, matched_file)
+        self.parquet_files = [f for f in os.listdir(f'./bond') if f.startswith('PWREP') and f.endswith('.parquet')]
+
+    def check_winnings_history(self):
+        ultimate_winnings = 0
+        for file in self.parquet_files:
+            df = pd.read_parquet(f'./bond/{file}')
+            prizes_raw = df.to_dict(orient='list')
+
+            prizes = {
+                amount: [bond for arr in arr_list for bond in arr.tolist()]
+                for amount, arr_list in prizes_raw.items()
+            }
+
+            def in_any_history_range(bond_id, history):
+                for record in history.values():
+                    if record['start_id'] <= bond_id <= record['end_id']:
+                        return True
+                return False
+
+            total_winnings = 0
+            winning_bonds = []  # optional: to see which of your bonds have won
+
+            for amount, bond_ids in prizes.items():
+                for bond_id in bond_ids:
+                    if in_any_history_range(bond_id, bonds_history):
+                        total_winnings += amount
+                        winning_bonds.append((bond_id, amount))
+                        ultimate_winnings += amount
+            print("Total winnings:", total_winnings)
+            print("Winning bonds:", winning_bonds)
+
+        print(f'Ultimate winnings: {ultimate_winnings}')
+
+
+
+
 
 
 
