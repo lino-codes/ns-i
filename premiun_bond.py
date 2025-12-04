@@ -278,35 +278,80 @@ class PremiumBonds(object):
         self.parquet_files = [f for f in os.listdir(f'./bond') if f.startswith('PWREP') and f.endswith('.parquet')]
 
     def check_winnings_history(self):
-        ultimate_winnings = 0
-        for file in self.parquet_files:
-            df = pd.read_parquet(f'./bond/{file}')
-            prizes_raw = df.to_dict(orient='list')
+        """Run this only when we want to update the winning history"""
+        all_winning_bonds = {}
+        file_mm_yy_pattern = r'(\d{2})(\d{4})\.parquet$'
+        if not os.path.exists(f'./bond/winning_record.parquet'):
+            for file in self.parquet_files:
+                df = pd.read_parquet(f'./bond/{file}')
+                match = re.search(file_mm_yy_pattern, file)
+                month = match.group(1)
+                year = match.group(2)
+                # print(f"Month: {month}, Year: {year}")
+                yyyy_mm = year + month
+                prizes_raw = df.to_dict(orient='list')
 
-            prizes = {
-                amount: [bond for arr in arr_list for bond in arr.tolist()]
-                for amount, arr_list in prizes_raw.items()
-            }
+                prizes = {
+                    amount: [bond for arr in arr_list for bond in arr.tolist()]
+                    for amount, arr_list in prizes_raw.items()
+                }
 
-            def in_any_history_range(bond_id, history):
-                for record in history.values():
-                    if record['start_id'] <= bond_id <= record['end_id']:
-                        return True
-                return False
+                def in_any_history_range(bond_id, history):
+                    win_bool = False
+                    deposit_date = None
+                    eligible_date = None
+                    for record in history.values():
+                        if record['start_id'] <= bond_id <= record['end_id']:
+                            win_bool = True
+                            deposit_date = record['deposit_date']
+                            eligible_date = record['eligible_date']
+                            return win_bool, deposit_date, eligible_date
+                    return win_bool, deposit_date, eligible_date
 
-            total_winnings = 0
-            winning_bonds = []  # optional: to see which of your bonds have won
+                total_winnings = 0
+                winning_bonds = {}  # optional: to see which of your bonds have won
 
-            for amount, bond_ids in prizes.items():
-                for bond_id in bond_ids:
-                    if in_any_history_range(bond_id, bonds_history):
-                        total_winnings += amount
-                        winning_bonds.append((bond_id, amount))
-                        ultimate_winnings += amount
-            print("Total winnings:", total_winnings)
-            print("Winning bonds:", winning_bonds)
+                for amount, bond_ids in prizes.items():
+                    for bond_id in bond_ids:
+                        win, deposit_dt, eligible_dt = in_any_history_range(bond_id, bonds_history)
+                        if win:
+                            total_winnings += amount
+                            winning_bonds[bond_id] = {'amount': amount, 'deposit_date': deposit_dt, 'eligible_date': eligible_dt}
+                all_winning_bonds[f'{int(yyyy_mm)}'] = winning_bonds
 
-        print(f'Ultimate winnings: {ultimate_winnings}')
+        print(all_winning_bonds)
+
+        def dict_to_df(data):
+            rows = []
+            for period, accounts in data.items():
+                for bond_id, details in accounts.items():
+                    rows.append({
+                        'winning_period': period,
+                        'bond_id': bond_id,
+                        'winning_amount': details['amount'],
+                        'deposit_date': details['deposit_date'],
+                        'eligible_date': details['eligible_date']
+                    })
+            return pd.DataFrame(rows)
+
+        # Usage
+        all_winning_df = dict_to_df(all_winning_bonds)
+        all_winning_df.to_parquet('./bond/winning_record.parquet')
+
+
+    def bond_return_analysis(self):
+        return None
+
+    def bond_odds_analysis(self):
+        return None
+
+
+    def premium_bond_analysis(self):
+        self.get_complete_historical_prize_winners()
+        self.check_winnings_history()
+        self.bond_analysis()
+
+
 
 
 
