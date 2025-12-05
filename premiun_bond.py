@@ -10,8 +10,7 @@ import zipfile
 from io import BytesIO
 from bond_record import win_record, bonds_history
 from helper import extract_number, parse_prize_ids
-from helpers.dataframe import pandas_show_all
-
+from helpers.dataframe import pandas_show_all, dict_to_df
 
 logging.basicConfig(
     level=logging.INFO,
@@ -279,9 +278,9 @@ class PremiumBonds(object):
 
     def check_winnings_history(self):
         """Run this only when we want to update the winning history"""
-        all_winning_bonds = {}
-        file_mm_yy_pattern = r'(\d{2})(\d{4})\.parquet$'
         if not os.path.exists(f'./bond/winning_record.parquet'):
+            all_winning_bonds = {}
+            file_mm_yy_pattern = r'(\d{2})(\d{4})\.parquet$'
             for file in self.parquet_files:
                 df = pd.read_parquet(f'./bond/{file}')
                 match = re.search(file_mm_yy_pattern, file)
@@ -319,28 +318,53 @@ class PremiumBonds(object):
                             winning_bonds[bond_id] = {'amount': amount, 'deposit_date': deposit_dt, 'eligible_date': eligible_dt}
                 all_winning_bonds[f'{int(yyyy_mm)}'] = winning_bonds
 
-        print(all_winning_bonds)
-
-        def dict_to_df(data):
-            rows = []
-            for period, accounts in data.items():
-                for bond_id, details in accounts.items():
-                    rows.append({
-                        'winning_period': period,
-                        'bond_id': bond_id,
-                        'winning_amount': details['amount'],
-                        'deposit_date': details['deposit_date'],
-                        'eligible_date': details['eligible_date']
-                    })
-            return pd.DataFrame(rows)
-
-        # Usage
-        all_winning_df = dict_to_df(all_winning_bonds)
-        all_winning_df.to_parquet('./bond/winning_record.parquet')
+            # Usage
+            all_winning_df = dict_to_df(all_winning_bonds)
+            print(all_winning_df)
+            all_winning_df.to_parquet('./bond/winning_record.parquet')
 
 
     def bond_return_analysis(self):
-        return None
+        df_win = pd.read_parquet('./bond/winning_record.parquet')
+        df_legacy_win = pd.DataFrame.from_dict(win_record, orient='index')
+        df_win = pd.concat([df_win, df_legacy_win])
+        df_win = df_win.sort_values(by=['winning_period', 'winning_amount'], ascending=[True, False])
+        df_bond = pd.DataFrame.from_dict(self.bond_record, 'index')
+        df_bond['number_of_bonds'] = df_bond.apply(lambda row: extract_number(row["end_id"]) -
+                                                               extract_number(row["start_id"]) + 1, axis=1)
+
+        df_bond['eligible_date'] = pd.to_datetime(df_bond['eligible_date']).dt.date
+
+
+
+        df_bond['winnings'] = 0
+        for _, win_row in df_win.iterrows():
+            mask = (df_bond['start_id'] <= win_row['bond_id']) & (df_bond['end_id'] >= win_row['bond_id'])
+            df_bond.loc[mask, 'winnings'] += win_row['winning_amount']
+
+        def annualised_bond_yield(df_bond, start_cols):
+            as_of = datetime.date.today()
+            df = df_bond.copy()
+            for start_col in start_cols:
+                start = pd.to_datetime(df_bond[f'{start_col}_date']).dt.date
+                days = pd.Series((as_of - start).map(lambda d: d.days), index=df.index).clip(lower=1)
+                principal = df['number_of_bonds'].astype(float)
+                # NOTE: Compound Interest
+                # df[f'{start_col}_annualised_rate'] = (1+ df['winnings'].astype(float) / principal)**(365 / days) - 1
+                # NOTE: Simple Interest
+                df[f'{start_col}_annualised_rate'] = (df['winnings'].astype(float) / principal)*(365 / days)
+                df[f'{start_col}_days_held'] = days
+                df['principal'] = principal
+            return df
+
+        df_out = annualised_bond_yield(df_bond, start_cols=['eligible', 'deposit'])
+        total_bonds = df_out['number_of_bonds'].sum()
+        print(df_out)
+        print(f'Total Bond: {total_bonds}')
+        weighted_rate = (df_out['eligible_annualised_rate'] * df_out['number_of_bonds']).sum() / total_bonds * 100
+        print(f'Annualised Interest Rate for the entire portfolio based on eligible date: {weighted_rate:.2f} ')
+        weighted_rate = (df_out['deposit_annualised_rate'] * df_out['number_of_bonds']).sum() / total_bonds * 100
+        print(f'Annualised Interest Rate for the entire portfolio based on deposit date: {weighted_rate:.2f} ')
 
     def bond_odds_analysis(self):
         return None
