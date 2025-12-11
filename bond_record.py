@@ -1,25 +1,5 @@
 import datetime
 
-# eligible_bonds = {0: {'eligible_date': '1 December 2024',
-#                       'deposit_date': '17 October 2024',
-#                       'bond_id_start': '598DB544814',
-#                       'bond_id_end': '598DB549813'},
-#                   1: {'eligible_date': '1 December 2024',
-#                       'deposit_date': '31 October 2024',
-#                       'bond_id_start': '600QB262524',
-#                       'bond_id_end': '600QB263523'},
-#                   2: {'eligible_date': '1 March 2025',
-#                       'deposit_date': '3 January 2025',
-#                       'bond_id_start': '608ZF437404',
-#                       'bond_id_end': '608ZF443403'},  #
-#
-#                   3: {'eligible_date': '1 April 2025',
-#                       'deposit_date': '19 February 2025',
-#                       'bond_id_start': '615AF256808',
-#                       'bond_id_end': '615AF259807'}
-#                   }
-
-
 bonds_history = {0: {'eligible_date': datetime.date(2024, 12, 1),
                       'deposit_date': datetime.date(2024, 10, 17),
                       'start_id': '598DB544814',
@@ -69,3 +49,12 @@ win_record = {0: {'bond_id': '598DB548967',
                   'eligible_date': datetime.date(2025, 3, 1),
                   'deposit_date': datetime.date(2025, 1, 3)
                   }              }
+
+total_eligible_bonds =  {datetime.date(2025,12,1): 134_625_121_463,
+                         datetime.date(2025,11,1): 133_692_841_902,
+                         datetime.date(2025,10,1): 133_096_700_225,
+                         datetime.date(2025,9,1): 132_593_956_732,
+                         datetime.date(2025,8,1): 132_118_833_579,
+                         datetime.date(2025,7,1): 131_905_631_906,
+                         datetime.date(2025,6,1): 131_438_233_006,
+                         }

@@ -359,14 +359,67 @@ class PremiumBonds(object):
 
         df_out = annualised_bond_yield(df_bond, start_cols=['eligible', 'deposit'])
         total_bonds = df_out['number_of_bonds'].sum()
-        print(df_out)
         print(f'Total Bond: {total_bonds}')
         weighted_rate = (df_out['eligible_annualised_rate'] * df_out['number_of_bonds']).sum() / total_bonds * 100
         print(f'Annualised Interest Rate for the entire portfolio based on eligible date: {weighted_rate:.2f} ')
         weighted_rate = (df_out['deposit_annualised_rate'] * df_out['number_of_bonds']).sum() / total_bonds * 100
         print(f'Annualised Interest Rate for the entire portfolio based on deposit date: {weighted_rate:.2f} ')
+        df_out.to_parquet('./bond/bond_return.parquet')
+        df_win["winning_period"] = (
+            df_win["winning_period"]
+            .astype("string")  # normalise to string dtype first
+            .str.strip()
+            .replace("", pd.NA)
+            .astype("Int64")  # pandas nullable integer
+        )
+        df_win.to_parquet('./bond/win_record.parquet')
+        return df_out
+
 
     def bond_odds_analysis(self):
+        logger.info('Running bond odds analysis')
+        return_df = pd.read_parquet('./bond/bond_return.parquet')
+        prize_df = pd.read_parquet('./bond/prize_distribution.parquet')
+        win_df = pd.read_parquet('./bond/win_record.parquet')
+        prize_df["file_date"] = pd.to_datetime(prize_df["file_date"], format="%d%m%Y")
+        prize_df["prize_date"] = prize_df["file_date"].dt.strftime("%Y%m")
+        prize_df['prize_date'] = prize_df['prize_date'].astype(int)
+        prize_sum = prize_df.groupby(["prize_date"])[["number_of_prizes", "total_prize_amount"]].sum().reset_index()
+        prize_sum['winning_per_prize'] = prize_sum['total_prize_amount'] / prize_sum['number_of_prizes']
+
+        return_df['eligible_date'] = pd.to_datetime(return_df['eligible_date'])
+        return_df['eligible_ym'] = return_df['eligible_date'].dt.strftime('%Y%m')
+        return_df['eligible_ym'] = return_df['eligible_ym'].astype(int)
+        bonds_monthly = return_df.groupby('eligible_ym')[['number_of_bonds']].sum()
+
+        df2_sorted = bonds_monthly.sort_index()  # sort by eligible_ym [web:9]
+        df2_sorted['cum_bonds'] = df2_sorted['number_of_bonds'].cumsum()  # [web:7][web:10]
+
+        # 2. For each prize_date, find latest eligible_ym <= prize_date
+        #    and take its cumulative sum as eligible_bonds
+        eligible = (
+            df2_sorted
+            .reindex(df2_sorted.index.union(prize_sum['prize_date']))  # fill intermediate dates [web:4]
+            .sort_index()
+        )
+        eligible['cum_bonds'] = eligible['number_of_bonds'].fillna(0).cumsum()  # [web:7][web:10]
+
+        # take cum_bonds at the prize_date rows
+        lookup = eligible.loc[prize_sum['prize_date'], 'cum_bonds'].to_numpy()
+
+        # 3. Assign to df1
+        prize_sum['eligible_bonds'] = lookup
+        prize_win = pd.merge(win_df, prize_sum, how='left', left_on='winning_period', right_on='prize_date')
+
+        # prize_win = prize_win.dropna(how="any")
+        # prize_win = prize_win.drop(columns=["prize_date"])
+
+        print(prize_win)
+        print(win_df)
+        print(prize_df)
+
+
+
         return None
 
 
