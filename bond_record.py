@@ -50,6 +50,7 @@ win_record = {0: {'bond_id': '598DB548967',
                   'deposit_date': datetime.date(2025, 1, 3)
                   }              }
 
+# TODO: This
 total_eligible_bonds =  {datetime.date(2025,12,1): 134_625_121_463,
                          datetime.date(2025,11,1): 133_692_841_902,
                          datetime.date(2025,10,1): 133_096_700_225,

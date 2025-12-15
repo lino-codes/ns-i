@@ -1,5 +1,6 @@
 import re
 import pandas as pd
+import numpy as np
 import requests
 import os
 import datetime
@@ -7,8 +8,9 @@ import logging
 from bs4 import BeautifulSoup
 
 import zipfile
+from scipy.stats import norm
 from io import BytesIO
-from bond_record import win_record, bonds_history
+from bond_record import win_record, bonds_history, total_eligible_bonds
 from helper import extract_number, parse_prize_ids
 from helpers.dataframe import pandas_show_all, dict_to_df
 
@@ -143,6 +145,8 @@ class PremiumBonds(object):
                 df['principal'] = principal
             return df
 
+        print('THe DF BOND')
+        print(df_bond)
         df_out = annualised_bond_yield(df_bond, start_cols=['eligible', 'deposit'])
         total_bonds = df_out['number_of_bonds'].sum()
 
@@ -357,9 +361,31 @@ class PremiumBonds(object):
                 df['principal'] = principal
             return df
 
+
         df_out = annualised_bond_yield(df_bond, start_cols=['eligible', 'deposit'])
         total_bonds = df_out['number_of_bonds'].sum()
         print(f'Total Bond: {total_bonds}')
+        print(df_out)
+        as_of_date = datetime.datetime.today()
+        df = df_out.copy()
+        df["eligible_date"] = pd.to_datetime(df["eligible_date"])
+        df["years"] = (as_of_date - df["eligible_date"]).dt.days / 365.25
+        df.loc[df["years"] < 0, "years"] = 0
+
+        # 3. Principal per row
+        df["principal"] = df["number_of_bonds"].astype(float)
+
+        # 4. Portfolio-level annualised simple rate
+        total_principal = df["principal"].sum()
+        total_winnings = df["winnings"].sum()
+
+        weighted_years = (df["principal"] * df["years"]).sum() / total_principal
+        portfolio_rate = (total_winnings / total_principal) / weighted_years
+
+        print("Total principal:", total_principal)
+        print("Total winnings:", total_winnings)
+        print("Weighted years :", weighted_years)
+        print(f"Portfolio annualised rate: {portfolio_rate:.4%}")
         weighted_rate = (df_out['eligible_annualised_rate'] * df_out['number_of_bonds']).sum() / total_bonds * 100
         print(f'Annualised Interest Rate for the entire portfolio based on eligible date: {weighted_rate:.2f} ')
         weighted_rate = (df_out['deposit_annualised_rate'] * df_out['number_of_bonds']).sum() / total_bonds * 100
@@ -409,17 +435,105 @@ class PremiumBonds(object):
 
         # 3. Assign to df1
         prize_sum['eligible_bonds'] = lookup
-        prize_win = pd.merge(win_df, prize_sum, how='left', left_on='winning_period', right_on='prize_date')
+        prize_win = pd.merge(win_df, prize_sum, how='outer', left_on='winning_period', right_on='prize_date')
 
-        # prize_win = prize_win.dropna(how="any")
-        # prize_win = prize_win.drop(columns=["prize_date"])
+        total_number_of_bonds = {int(k.strftime('%Y%m')): v for k, v in total_eligible_bonds.items()}
+        prize_df['total_no_of_prizes'] = prize_df['prize_date'].map(total_number_of_bonds)
 
-        print(prize_win)
-        print(win_df)
+        prize_win['total_number_of_bonds'] = prize_win['prize_date'].map(total_number_of_bonds)
+
+        prize_win['expected_number_of_prize'] = prize_win['number_of_prizes'] / prize_win['total_number_of_bonds'] * prize_win['eligible_bonds']
+        prize_win['expected_winning'] = prize_win['expected_number_of_prize'] * prize_win['winning_per_prize']
+        prize_stats = prize_win[['prize_date', 'number_of_prizes', 'total_prize_amount', 'winning_per_prize',
+                                 'eligible_bonds', 'total_number_of_bonds', 'expected_number_of_prize',
+                                 'expected_winning']]
+
+        own_wins = prize_win[['winning_period', 'bond_id', 'winning_amount', 'eligible_date', 'prize_date']]
+        print(prize_stats)
+        own_wins['total_winning_amount_per_period'] = (
+            own_wins.groupby('winning_period')['winning_amount']
+            .transform('sum')
+        )
+        own_wins['total_winning_bonds_per_period'] = (
+            own_wins.groupby('winning_period')['bond_id']
+            .transform('count')
+        )
+
+        own_wins['total_winning_amount_per_period'] = own_wins['total_winning_amount_per_period'].fillna(0)
+        own_wins['total_winning_bonds_per_period'] = own_wins['total_winning_bonds_per_period'].fillna(0)
+        basic_luck = own_wins[['prize_date', 'total_winning_amount_per_period', 'total_winning_bonds_per_period']]
+        basic_luck = basic_luck.drop_duplicates().dropna()
+        unique_prize_stats = prize_stats.drop_duplicates().dropna()
+        basic_luck_df = pd.merge(basic_luck, unique_prize_stats, how='left', on='prize_date')
+        basic_luck_df['luck_amount'] = basic_luck_df['total_winning_amount_per_period'] - basic_luck_df['expected_winning']
+        basic_luck_df['luck_prizes'] = basic_luck_df['total_winning_bonds_per_period'] - basic_luck_df['expected_number_of_prize']
+        months = max(basic_luck_df['prize_date']) - min(basic_luck_df['prize_date'])
+        exp_amt = basic_luck_df['expected_winning'].sum()
+        won_amt = basic_luck_df['total_winning_amount_per_period'].sum()
+        exp_prizes = basic_luck_df['expected_number_of_prize'].sum()
+        won_prizes = basic_luck_df['total_winning_bonds_per_period'].sum()
+        luck_amt = basic_luck_df['luck_amount'].sum()
+        luck_prizes = basic_luck_df['luck_prizes'].sum()
+
+        print(
+            f"In the past {months:.1f} months, "
+            f"you were expected to win £{exp_amt:.1f}, "
+            f"and you have won £{won_amt:.1f}. "
+            f"You were expected to win {exp_prizes:.1f} prizes, "
+            f"and you have won {won_prizes:.1f}."
+        )
+
+        print(
+            f"In the past {months:.1f} months, "
+            f"your net prize amount is £{luck_amt:.1f} "
+            f"and net number of prizes is {luck_prizes:.1f}."
+        )
+        # print(basic_luck_df)
         print(prize_df)
+        prize_df['prize_date'] = prize_df['prize_date'].astype(int)
 
 
+        # We'll store percentiles and quantiles in new columns
+        month_df = basic_luck_df.copy()
+        month_df['theoretical_mean'] = np.nan
+        month_df['theoretical_sd'] = np.nan
+        month_df['z_score_amount'] = np.nan  # how many SDs your £ winnings are from the mean
 
+        for idx, row in month_df.iterrows():
+            m = int(row['prize_date'])
+            N = float(row['eligible_bonds'])  # your number of £1 bonds that month
+
+            grp = prize_df[prize_df['prize_date'] == m]
+            if grp.empty or N <= 0:
+                continue
+
+            total_bonds_in_issue = float(grp['total_no_of_prizes'].iloc[0])
+
+            v = grp['prize_amount'].to_numpy(dtype=float)  # prize sizes
+            k = grp['number_of_prizes'].to_numpy(dtype=float)  # counts
+
+            p = k / total_bonds_in_issue  # per-bond probabilities
+
+            mu_bond = np.sum(p * v)
+            m2_bond = np.sum(p * v * v)
+            var_bond = m2_bond - mu_bond ** 2
+
+            mu = N * mu_bond
+            var = N * var_bond
+            sd = np.sqrt(var)
+
+            month_df.at[idx, 'theoretical_mean'] = mu
+            month_df.at[idx, 'theoretical_sd'] = sd
+
+            actual = float(row['total_winning_amount_per_period'])
+            if sd > 0:
+                z = (actual - mu) / sd
+                month_df.at[idx, 'z_score_amount'] = z
+
+
+        month_df['luck_percentile'] = norm.cdf(month_df['z_score_amount']) * 100
+
+        print(month_df)
         return None
 
 
