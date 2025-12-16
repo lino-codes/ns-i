@@ -5,16 +5,7 @@ from premiun_bond import PremiumBonds
 def run_analysis():
     """TODO: 1. Check whether we have the entire winner history"""
     bond_obj = PremiumBonds(bonds_history)
-    # bond_obj.read_historical_winners()
-    bond_obj.get_complete_historical_prize_winners()
-    bond_obj.check_winnings_history()
-    bond_obj.bond_return_analysis()
-    bond_obj.bond_odds_analysis()
-    # bond_obj.bond_analysis()
-    # bond_obj.historical_prize_winner()
-    # bond_obj.read_historical_winners()
-    # bond_obj.odds_analysis()
-
+    bond_obj.run_premium_bond_analysis()
 
 if __name__ == '__main__':
     run_analysis()

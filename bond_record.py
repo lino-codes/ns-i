@@ -1,5 +1,6 @@
 import datetime
 
+# NOTE:
 bonds_history = {0: {'eligible_date': datetime.date(2024, 12, 1),
                       'deposit_date': datetime.date(2024, 10, 17),
                       'start_id': '598DB544814',
@@ -28,7 +29,6 @@ bonds_history = {0: {'eligible_date': datetime.date(2024, 12, 1),
                      'deposit_date': datetime.date(2025, 11, 24),
                      'start_id': '651HD648032',
                      'end_id': '651HD650531'},
-
 
                   }
 
