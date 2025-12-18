@@ -35,6 +35,7 @@ class PremiumBonds(object):
         self.target_file_path = ''
         self.text_files = [f for f in os.listdir(f'./bond') if f.startswith('PWREP') and f.endswith('.txt')]
         self.parquet_files = [f for f in os.listdir(f'./bond') if f.startswith('PWREP') and f.endswith('.parquet')]
+        self.current_YYYYMM = datetime.datetime.now().strftime("%Y%m")
 
     def download_high_value_winner(self):
         """Get and download high value winners from NS&I. For unofficial check on the first day of the month."""
@@ -112,49 +113,6 @@ class PremiumBonds(object):
                         print(f'{bond_bundle}: Not even close this time :(')
 
 
-    def bond_analysis(self):
-        df_bond = pd.DataFrame.from_dict(self.bond_record, 'index')
-        df_bond['number_of_bonds'] = df_bond.apply(lambda row: extract_number(row["end_id"]) -
-                                                               extract_number(row["start_id"]) + 1, axis=1)
-
-        df_win = pd.DataFrame.from_dict(win_record, orient='index')
-        df_bond['start_num'] = df_bond['start_id'].apply(extract_number)
-        df_bond['end_num'] = df_bond['end_id'].apply(extract_number)
-        df_win['id_num'] = df_win['id'].apply(extract_number)
-
-        df_bond['winnings'] = 0
-        for _, win_row in df_win.iterrows():
-            mask = (df_bond['start_num'] <= win_row['id_num']) & (df_bond['end_num'] >= win_row['id_num'])
-            df_bond.loc[mask, 'winnings'] += win_row['amount']
-        df_bond = df_bond.drop(columns=['start_num', 'end_num'])
-        df_win = df_win.drop(columns=['id_num'])
-
-        def annualised_bond_yield(df_bond, start_cols):
-            as_of = datetime.date.today()
-            df = df_bond.copy()
-
-            for start_col in start_cols:
-                start = pd.to_datetime(df_bond[f'{start_col}_date']).dt.date
-                days = pd.Series((as_of - start).map(lambda d: d.days), index=df.index).clip(lower=1)
-                principal = df['number_of_bonds'].astype(float)
-                # NOTE: Compound Interest
-                # df[f'{start_col}_annualised_rate'] = (1+ df['winnings'].astype(float) / principal)**(365 / days) - 1
-                # NOTE: Simple Interest
-                df[f'{start_col}_annualised_rate'] = (df['winnings'].astype(float) / principal)*(365 / days)
-                df[f'{start_col}_days_held'] = days
-                df['principal'] = principal
-            return df
-
-        print('THe DF BOND')
-        print(df_bond)
-        df_out = annualised_bond_yield(df_bond, start_cols=['eligible', 'deposit'])
-        total_bonds = df_out['number_of_bonds'].sum()
-
-        weighted_rate = (df_out['eligible_annualised_rate'] * df_out['number_of_bonds']).sum() / total_bonds * 100
-        print(f'Annualised Interest Rate for the entire portfolio based on eligible_date: {weighted_rate:.2f} ')
-        weighted_rate = (df_out['deposit_annualised_rate'] * df_out['number_of_bonds']).sum() / total_bonds * 100
-        print(f'Annualised Interest Rate for the entire portfolio based on deposit date: {weighted_rate:.2f} ')
-
     def get_complete_historical_prize_winners(self):
         """Download the complete prize winners."""
         logger.info('Getting complete prize winners from NS&I.')
@@ -218,56 +176,6 @@ class PremiumBonds(object):
                         print(f"Extracted: {out_path}")
         else:
             logger.info(f'All Files have already been extracted, latest being {bond_links[0]}')
-
-    def read_historical_winners(self):
-        files = os.listdir(f'./bond')
-        matched_files = [f for f in files if f.startswith('PWREP') and f.endswith('.txt')]
-        all_df = pd.DataFrame()
-        for matched_file in matched_files:
-            with open(f'./bond/{matched_file}', 'r', encoding='cp1252') as f:
-                text = f.read()
-            pattern = r'([A-Z]+\.)\s+([\d,]+) prize.*?£([\d,]+)'
-
-            matches = re.findall(pattern, text)
-
-            # Build the records for DataFrame
-            rows = []
-            for part, count, prize in matches:
-                rows.append({
-                    'part': part.replace('.', ''),
-                    'number_of_prizes': int(count.replace(',', '')),
-                    'prize_amount': int(prize.replace(',', ''))
-                })
-
-            df = pd.DataFrame(rows)
-            df['total_prize_amount'] = df['number_of_prizes'] * df['prize_amount']
-            print('MATCHED FILE')
-            print(matched_file)
-            file_date = matched_file.replace('PWREP_', '')
-            file_date = file_date.replace('.txt', '')
-            print(file_date)
-
-            df['file_date'] = str(file_date)
-            print(df)
-
-            all_df = pd.concat([all_df, df])
-
-        all_df.to_csv(f"./bond/prize_distribution.csv")
-        all_df.to_parquet(f"./bond/prize_distribution.parquet")
-
-
-    def odds_analysis(self):
-        prize_df = pd.read_parquet(f"./bond/prize_distribution.parquet")
-        print(prize_df)
-        files = os.listdir(f'./bond')
-        matched_files = [f for f in files if f.startswith('PWREP') and f.endswith('.txt')]
-        all_df = pd.DataFrame()
-
-
-        for matched_file in matched_files:
-            with open(f'./bond/{matched_file}', 'r', encoding='cp1252') as f:
-                text = f.read()
-            prize_dict = parse_prize_ids(text, matched_file)
 
 
     def format_complete_historical_prize_to_parquet(self):
@@ -333,7 +241,7 @@ class PremiumBonds(object):
 
 
     def bond_return_analysis(self):
-        df_win = pd.read_parquet('./bond/winning_record.parquet')
+        df_win = pd.read_parquet(f'./bond/winning_record_{self.current_YYYYMM}.parquet')
         df_legacy_win = pd.DataFrame.from_dict(win_record, orient='index')
         df_win = pd.concat([df_win, df_legacy_win])
         df_win = df_win.sort_values(by=['winning_period', 'winning_amount'], ascending=[True, False])
@@ -368,32 +276,72 @@ class PremiumBonds(object):
         df_bond.loc[df_bond["YTM_eligible"] < 0, "YTM_eligible"] = 0
 
         df_bond["number_of_bonds"] = df_bond["number_of_bonds"].astype(float)
-
-        print(df_bond)
+        total_winnings = df_bond['winnings'].sum()
 
         weighted_principal = (df_bond["number_of_bonds"] * df_bond["YTD_deposit"]).sum()
-        total_winnings = df_bond['winnings'].sum()
         portfolio_rate = total_winnings/weighted_principal*100
         print(f'The portfolio rate using deposit date as start date and ending on today is {portfolio_rate:.2f}.')
 
         weighted_principal = (df_bond["number_of_bonds"] * df_bond["YTM_deposit"]).sum()
-        total_winnings = df_bond['winnings'].sum()
         portfolio_rate = total_winnings/weighted_principal*100
         print(f'The portfolio rate using deposit date as start date and ending on first day of the month is {portfolio_rate:.2f}.')
 
 
         weighted_principal = (df_bond["number_of_bonds"] * df_bond["YTD_eligible"]).sum()
-        total_winnings = df_bond['winnings'].sum()
-        print(total_winnings)
-        print(weighted_principal)
         portfolio_rate = total_winnings/weighted_principal*100
         print(f'The portfolio rate using eligible date as start date and ending on today is {portfolio_rate:.2f}.')
 
         weighted_principal = (df_bond["number_of_bonds"] * df_bond["YTM_eligible"]).sum()
-        total_winnings = df_bond['winnings'].sum()
         portfolio_rate = total_winnings/weighted_principal*100
-        print(f'The portfolio rate using deposit date as eligible date and ending on first day of the month is {portfolio_rate:.2f}.')
+        print(f'The portfolio rate using eligible date as eligible date and ending on first day of the month is {portfolio_rate:.2f}.')
+        return df_bond
 
+
+    def get_prize_distribution(self):
+        """This is to get the historical prize distribution, the number of prizes for each prize category"""
+        files = os.listdir(f'./bond')
+        matched_files = [f for f in files if f.startswith('PWREP') and f.endswith('.txt')]
+        all_df = pd.DataFrame()
+        for matched_file in matched_files:
+            with open(f'./bond/{matched_file}', 'r', encoding='cp1252') as f:
+                text = f.read()
+            pattern = r'([A-Z]+\.)\s+([\d,]+) prize.*?£([\d,]+)'
+
+            matches = re.findall(pattern, text)
+
+            # Build the records for DataFrame
+            rows = []
+            for part, count, prize in matches:
+                rows.append({
+                    'part': part.replace('.', ''),
+                    'number_of_prizes': int(count.replace(',', '')),
+                    'prize_amount': int(prize.replace(',', ''))
+                })
+
+            df = pd.DataFrame(rows)
+            df['total_prize_amount'] = df['number_of_prizes'] * df['prize_amount']
+            file_date = matched_file.replace('PWREP_', '')
+            file_date = file_date.replace('.txt', '')
+            df['file_date'] = str(file_date)
+            all_df = pd.concat([all_df, df])
+
+        all_df.to_csv(f"./bond/prize_distribution_{self.current_YYYYMM}.csv")
+        all_df.to_parquet(f"./bond/prize_distribution_{self.current_YYYYMM}.parquet")
+        return all_df
+
+    def bond_odds_analysis_new(self):
+        prize_distribution_parquet = f'./bond/prize_distribution_{self.current_YYYYMM}.parquet'
+        if os.path.isfile(prize_distribution_parquet):
+            prize_distribution = pd.read_parquet(f'./bond/prize_distribution_{self.current_YYYYMM}.parquet')
+        else:
+            prize_distribution = self.get_prize_distribution()
+        print(prize_distribution)
+        df_bond = self.bond_return_analysis()
+        print(df_bond)
+        df_win = pd.read_parquet(f'./bond/winning_record_{self.current_YYYYMM}.parquet')
+        print(df_win)
+
+        return None
 
 
     def bond_odds_analysis(self):
@@ -405,7 +353,10 @@ class PremiumBonds(object):
         prize_df["prize_date"] = prize_df["file_date"].dt.strftime("%Y%m")
         prize_df['prize_date'] = prize_df['prize_date'].astype(int)
         prize_sum = prize_df.groupby(["prize_date"])[["number_of_prizes", "total_prize_amount"]].sum().reset_index()
+
         prize_sum['winning_per_prize'] = prize_sum['total_prize_amount'] / prize_sum['number_of_prizes']
+        print('prize sum')
+        print(prize_sum)
 
         return_df['eligible_date'] = pd.to_datetime(return_df['eligible_date'])
         return_df['eligible_ym'] = return_df['eligible_date'].dt.strftime('%Y%m')
@@ -534,7 +485,9 @@ class PremiumBonds(object):
     def run_premium_bond_analysis(self):
         self.format_complete_historical_prize_to_parquet()
         self.get_full_history_winning()
-        self.bond_return_analysis()
+        # self.bond_return_analysis()
+        self.bond_odds_analysis_new()
+
 
 
 
